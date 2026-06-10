@@ -10,3 +10,4 @@ plugins/ldapservers.apacheds/resources/libs/
 tests/test.integration.ui/screenshots
 .DS_Store
 workspace
+result

@@ -57,6 +57,51 @@ or on Windows :
 
     > build.bat
 
+#### Build with Nix (arm64 macOS app)
+
+A `flake.nix` is provided to build the macOS arm64 (`aarch64`) application
+bundle. It must be run on an Apple Silicon Mac (`aarch64-darwin`).
+
+Build the `ApacheDirectoryStudio.app` bundle:
+
+    $ nix build .#default --option sandbox relaxed
+
+Internally this runs the same two-step Maven/Tycho build as `./build.sh`
+(`mvn -f pom-first.xml clean install` then `mvn clean install`) using JDK 17,
+then extracts the arm64 product bundle.
+
+##### Output
+
+After a successful build the app bundle is available at:
+
+    ./result/Applications/ApacheDirectoryStudio.app
+
+`result` is the symlink created by `nix build`; it points into the Nix store
+(`/nix/store/<hash>-apache-directory-studio-<version>/Applications/ApacheDirectoryStudio.app`).
+Run or copy it like any other macOS app, e.g.:
+
+    $ open ./result/Applications/ApacheDirectoryStudio.app
+    $ cp -R ./result/Applications/ApacheDirectoryStudio.app /Applications/
+
+The bundle is extracted from Tycho's materialized product at
+`product/target/products/org.apache.directory.studio.product/macosx/cocoa/aarch64/ApacheDirectoryStudio.app`.
+
+A development shell with the required JDK 17 and Maven is also available:
+
+    $ nix develop
+
+> [!NOTE]
+> Eclipse Tycho resolves dependencies from Eclipse p2 update sites and Maven
+> Central at build time, so the build needs network access. The derivation is
+> therefore marked impure (`__noChroot = true`) and requires `sandbox = relaxed`
+> in `nix.conf` (or `--option sandbox relaxed`). On macOS the sandbox is off by
+> default, so the option is usually not needed.
+>
+> JDK 17 is used deliberately: the build relies on the old `antlr-maven-plugin`
+> (ANTLR 2.x), which calls `System.setSecurityManager()`. JDK 18+ rejects this,
+> and the `-Djava.security.manager=allow` workaround breaks Tycho's embedded
+> Equinox runtime, so JDK 17 is the only version that satisfies both.
+
 ### Tests
 
 * Unit tests included in `src/test/java` of each plugin are executed automatically and run in 'test' phase
