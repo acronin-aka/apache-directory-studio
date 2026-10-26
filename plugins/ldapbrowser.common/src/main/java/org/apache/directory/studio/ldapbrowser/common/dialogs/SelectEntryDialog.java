@@ -21,6 +21,9 @@
 package org.apache.directory.studio.ldapbrowser.common.dialogs;
 
 
+import java.util.ArrayList;
+import java.util.List;
+
 import org.apache.directory.studio.ldapbrowser.common.widgets.browser.BrowserActionGroup;
 import org.apache.directory.studio.ldapbrowser.common.widgets.browser.BrowserConfiguration;
 import org.apache.directory.studio.ldapbrowser.common.widgets.browser.BrowserUniversalListener;
@@ -60,6 +63,9 @@ public class SelectEntryDialog extends Dialog
     /** The selected entry. */
     private IEntry selectedEntry;
 
+    /** All selected entries (supports multi-selection). */
+    private List<IEntry> selectedEntries;
+
     /** The browser configuration. */
     private BrowserConfiguration browserConfiguration;
 
@@ -89,6 +95,7 @@ public class SelectEntryDialog extends Dialog
         this.rootEntry = rootEntry;
         this.initialEntry = initialEntry;
         this.selectedEntry = null;
+        this.selectedEntries = new ArrayList<>();
     }
 
 
@@ -128,7 +135,23 @@ public class SelectEntryDialog extends Dialog
      */
     protected void okPressed()
     {
-        selectedEntry = initialEntry;
+        selectedEntries = new ArrayList<>();
+        if ( browserWidget != null )
+        {
+            IStructuredSelection sel = ( IStructuredSelection ) browserWidget.getViewer().getSelection();
+            for ( Object o : sel.toList() )
+            {
+                if ( o instanceof IEntry )
+                {
+                    selectedEntries.add( ( IEntry ) o );
+                }
+                else if ( o instanceof ISearchResult )
+                {
+                    selectedEntries.add( ( ( ISearchResult ) o ).getEntry() );
+                }
+            }
+        }
+        selectedEntry = selectedEntries.isEmpty() ? initialEntry : selectedEntries.get( 0 );
         super.okPressed();
     }
 
@@ -189,14 +212,22 @@ public class SelectEntryDialog extends Dialog
             {
                 if ( !event.getSelection().isEmpty() )
                 {
-                    Object o = ( ( IStructuredSelection ) event.getSelection() ).getFirstElement();
-                    if ( o instanceof IEntry )
+                    IStructuredSelection sel = ( IStructuredSelection ) event.getSelection();
+                    selectedEntries = new ArrayList<>();
+                    for ( Object o : sel.toList() )
                     {
-                        initialEntry = ( IEntry ) o;
+                        if ( o instanceof IEntry )
+                        {
+                            selectedEntries.add( ( IEntry ) o );
+                        }
+                        else if ( o instanceof ISearchResult )
+                        {
+                            selectedEntries.add( ( ( ISearchResult ) o ).getEntry() );
+                        }
                     }
-                    else if ( o instanceof ISearchResult )
+                    if ( !selectedEntries.isEmpty() )
                     {
-                        initialEntry = ( ( ISearchResult ) o ).getEntry();
+                        initialEntry = selectedEntries.get( 0 );
                     }
                 }
             }
@@ -222,12 +253,23 @@ public class SelectEntryDialog extends Dialog
 
     /**
      * Gets the selected entry.
-     * 
-     * @return the selected entry
+     *
+     * @return the selected entry, or null if none
      */
     public IEntry getSelectedEntry()
     {
         return selectedEntry;
+    }
+
+
+    /**
+     * Gets all selected entries (supports multi-selection via Ctrl/Shift+click).
+     *
+     * @return the list of selected entries, never null
+     */
+    public List<IEntry> getSelectedEntries()
+    {
+        return selectedEntries;
     }
 
 }

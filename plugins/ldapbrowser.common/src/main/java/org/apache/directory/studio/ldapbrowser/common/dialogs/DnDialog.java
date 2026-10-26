@@ -41,6 +41,9 @@ import org.eclipse.swt.widgets.Shell;
 /**
  * The DnDialog is used from the Dn value editor to edit and select a Dn.
  *
+ * In multi-select mode it allows the user to manage a list of DNs at once,
+ * which is useful e.g. when adding multiple members to a group.
+ *
  * @author <a href="mailto:dev@directory.apache.org">Apache Directory Project</a>
  */
 
@@ -59,13 +62,18 @@ public class DnDialog extends Dialog
     /** The connection. */
     private IBrowserConnection connection;
 
-    /** The dn */
-    private Dn dn;
+    /** One dn (single-select mode) or multiple DNs (multi-select mode). */
+    private Dn[] dns;
+
+    /** True when the dialog operates in multi-select mode. */
+    private boolean multiSelect;
 
 
     /**
-     * Creates a new instance of DnDialog.
+     * Creates a new instance of DnDialog in single-select mode.
      * 
+     * Use {@link #getDn()} to retrieve the result after the dialog is closed.
+     *
      * @param parentShell the parent shell
      * @param title the title of the dialog
      * @param description the description of the dialog
@@ -79,7 +87,31 @@ public class DnDialog extends Dialog
         this.title = title;
         this.description = description;
         this.connection = connection;
-        this.dn = dn;
+        this.dns = dn != null ? new Dn[]{ dn } : new Dn[0];
+        this.multiSelect = false;
+    }
+
+
+    /**
+     * Creates a new instance of DnDialog in multi-select mode.
+     *
+     * Use {@link #getDns()} to retrieve the result after the dialog is closed.
+     *
+     * @param parentShell the parent shell
+     * @param title the title of the dialog
+     * @param description the description of the dialog
+     * @param connection the connection used to browse the directory
+     * @param dns the initial list of DNs, may be null or empty
+     */
+    public DnDialog( Shell parentShell, String title, String description, IBrowserConnection connection, Dn[] dns )
+    {
+        super( parentShell );
+        super.setShellStyle( super.getShellStyle() | SWT.RESIZE );
+        this.title = title;
+        this.description = description;
+        this.connection = connection;
+        this.dns = dns != null ? dns : new Dn[0];
+        this.multiSelect = true;
     }
 
 
@@ -99,8 +131,11 @@ public class DnDialog extends Dialog
      */
     protected void okPressed()
     {
-        dn = entryWidget.getDn();
-        entryWidget.saveDialogSettings();
+        dns = entryWidget.getDns();
+        if ( !multiSelect )
+        {
+            entryWidget.saveDialogSettings();
+        }
         super.okPressed();
     }
 
@@ -124,6 +159,10 @@ public class DnDialog extends Dialog
         Composite composite = ( Composite ) super.createDialogArea( parent );
         GridData gd = new GridData( GridData.FILL_BOTH );
         gd.widthHint = convertHorizontalDLUsToPixels( IDialogConstants.MINIMUM_MESSAGE_AREA_WIDTH ) * 3 / 2;
+        if ( multiSelect )
+        {
+            gd.heightHint = convertHorizontalDLUsToPixels( IDialogConstants.MINIMUM_MESSAGE_AREA_WIDTH );
+        }
         composite.setLayoutData( gd );
 
         if ( description != null )
@@ -132,7 +171,17 @@ public class DnDialog extends Dialog
         }
 
         Composite innerComposite = BaseWidgetUtils.createColumnContainer( composite, 2, 1 );
-        entryWidget = new EntryWidget( connection, dn );
+
+        if ( multiSelect )
+        {
+            entryWidget = new EntryWidget( connection, dns );
+            innerComposite.setLayoutData( new GridData( GridData.FILL_BOTH ) );
+        }
+        else
+        {
+            entryWidget = new EntryWidget( connection, dns.length == 0 ? null : dns[0] );
+        }
+
         entryWidget.addWidgetModifyListener( new WidgetModifyListener()
         {
             public void widgetModified( WidgetModifyEvent event )
@@ -154,20 +203,39 @@ public class DnDialog extends Dialog
     {
         if ( getButton( IDialogConstants.OK_ID ) != null )
         {
-            getButton( IDialogConstants.OK_ID ).setEnabled(
-                entryWidget.getDn() != null && !"".equals( entryWidget.getDn().toString() ) ); //$NON-NLS-1$
+            if ( multiSelect )
+            {
+                // Always allow confirming in multi-select mode (empty list is valid)
+                getButton( IDialogConstants.OK_ID ).setEnabled( true );
+            }
+            else
+            {
+                getButton( IDialogConstants.OK_ID ).setEnabled(
+                    entryWidget.getDn() != null && !"".equals( entryWidget.getDn().toString() ) ); //$NON-NLS-1$
+            }
         }
     }
 
 
     /**
-     * Gets the dn.
-     * 
+     * Gets the dn (single-select mode).
+     *
      * @return the dn
      */
     public Dn getDn()
     {
-        return dn;
+        return dns.length == 0 ? null : dns[0];
+    }
+
+
+    /**
+     * Gets the list of DNs (multi-select mode).
+     *
+     * @return the array of selected DNs, never null
+     */
+    public Dn[] getDns()
+    {
+        return dns;
     }
 
 }

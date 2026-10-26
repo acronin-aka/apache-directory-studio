@@ -21,6 +21,10 @@
 package org.apache.directory.studio.ldapbrowser.common.widgets.search;
 
 
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
+
 import org.apache.directory.api.ldap.model.exception.LdapInvalidDnException;
 import org.apache.directory.api.ldap.model.name.Dn;
 import org.apache.directory.studio.common.ui.HistoryUtils;
@@ -54,10 +58,16 @@ import org.eclipse.swt.widgets.Composite;
  * <li>a browse button to open a {@link SelectEntryDialog}
  * </ul>
  *
+ * In multi-select mode the widget shows a list of DNs together with
+ * Add and Remove buttons so the user can manage several entries at once
+ * (e.g. when adding multiple members to a group).
+ *
  * @author <a href="mailto:dev@directory.apache.org">Apache Directory Project</a>
  */
 public class EntryWidget extends AbstractWidget
 {
+    // ---- single-select fields ----
+
     /** The Dn combo. */
     private Combo dnCombo;
 
@@ -66,9 +76,6 @@ public class EntryWidget extends AbstractWidget
 
     /** The entry browse button. */
     private Button entryBrowseButton;
-
-    /** The connection. */
-    private IBrowserConnection browserConnection;
 
     /** The selected Dn. */
     private Dn dn;
@@ -79,6 +86,28 @@ public class EntryWidget extends AbstractWidget
     /** Flag indicating if using local name for the dn */
     boolean useLocalName;
 
+    // ---- multi-select fields ----
+
+    /** True when the widget operates in multi-select mode. */
+    private boolean multiSelect;
+
+    /** SWT list showing the selected DNs (multi-select mode). */
+    private org.eclipse.swt.widgets.List dnListControl;
+
+    /** Ordered list of DNs managed in multi-select mode. */
+    private List<Dn> dns;
+
+    /** Button to open the entry browser and add entries (multi-select mode). */
+    private Button addButton;
+
+    /** Button to remove the currently highlighted entries (multi-select mode). */
+    private Button removeButton;
+
+    // ---- shared fields ----
+
+    /** The connection. */
+    private IBrowserConnection browserConnection;
+
 
     /**
      * Creates a new instance of EntryWidget.
@@ -87,11 +116,12 @@ public class EntryWidget extends AbstractWidget
     {
         browserConnection = null;
         dn = null;
+        multiSelect = false;
     }
 
 
     /**
-     * Creates a new instance of EntryWidget.
+     * Creates a new instance of EntryWidget (single-select mode).
      *
      * @param browserConnection the connection
      * @param dn the initial Dn
@@ -103,7 +133,7 @@ public class EntryWidget extends AbstractWidget
 
 
     /**
-     * Creates a new instance of EntryWidget.
+     * Creates a new instance of EntryWidget (single-select mode).
      *
      * @param browserConnection the connection
      * @param dn the initial Dn
@@ -116,6 +146,21 @@ public class EntryWidget extends AbstractWidget
         this.dn = dn;
         this.suffix = suffix;
         this.useLocalName = useLocalName;
+        this.multiSelect = false;
+    }
+
+
+    /**
+     * Creates a new instance of EntryWidget in multi-select mode.
+     *
+     * @param browserConnection the connection
+     * @param initialDns the initial list of DNs, may be null or empty
+     */
+    public EntryWidget( IBrowserConnection browserConnection, Dn[] initialDns )
+    {
+        this.browserConnection = browserConnection;
+        this.dns = new ArrayList<>( initialDns != null ? Arrays.asList( initialDns ) : new ArrayList<Dn>() );
+        this.multiSelect = true;
     }
 
 
@@ -126,7 +171,22 @@ public class EntryWidget extends AbstractWidget
      */
     public void createWidget( final Composite parent )
     {
+        if ( multiSelect )
+        {
+            createMultiSelectWidget( parent );
+        }
+        else
+        {
+            createSingleSelectWidget( parent );
+        }
+    }
 
+
+    /**
+     * Creates the single-select widget (original behaviour).
+     */
+    private void createSingleSelectWidget( final Composite parent )
+    {
         // Dn combo
         Composite textAndUpComposite = BaseWidgetUtils.createColumnContainer( parent, 2, 1 );
         dnCombo = BaseWidgetUtils.createCombo( textAndUpComposite, new String[0], -1, 1 );
@@ -213,7 +273,7 @@ public class EntryWidget extends AbstractWidget
                             }
                             catch ( LdapInvalidDnException lide )
                             {
-                                // Do nothing 
+                                // Do nothing
                             }
                         }
                     }
@@ -263,7 +323,87 @@ public class EntryWidget extends AbstractWidget
 
 
     /**
-     * Notifies that the Dn has been changed.
+     * Creates the multi-select widget (list + Add/Remove buttons).
+     */
+    private void createMultiSelectWidget( final Composite parent )
+    {
+        // DN list
+        dnListControl = new org.eclipse.swt.widgets.List( parent,
+            SWT.BORDER | SWT.MULTI | SWT.V_SCROLL | SWT.H_SCROLL );
+        GridData listGd = new GridData( GridData.FILL_BOTH );
+        listGd.heightHint = 100;
+        listGd.widthHint = 200;
+        dnListControl.setLayoutData( listGd );
+
+        for ( Dn d : dns )
+        {
+            dnListControl.add( d.getName() );
+        }
+
+        dnListControl.addSelectionListener( new SelectionAdapter()
+        {
+            public void widgetSelected( SelectionEvent e )
+            {
+                internalSetEnabled();
+            }
+        } );
+
+        // Buttons composite (stacked vertically in the second column)
+        Composite buttonsComposite = BaseWidgetUtils.createColumnContainer( parent, 1, 1 );
+        GridData bgd = new GridData( SWT.FILL, SWT.TOP, false, false );
+        buttonsComposite.setLayoutData( bgd );
+
+        addButton = BaseWidgetUtils.createButton( buttonsComposite,
+            Messages.getString( "EntryWidget.AddButton" ), 1 ); //$NON-NLS-1$
+        addButton.addSelectionListener( new SelectionAdapter()
+        {
+            public void widgetSelected( SelectionEvent e )
+            {
+                if ( browserConnection != null )
+                {
+                    IEntry rootEntry = browserConnection.getRootDSE();
+                    SelectEntryDialog dialog = new SelectEntryDialog( parent.getShell(),
+                        Messages.getString( "EntryWidget.SelectDN" ), rootEntry, null ); //$NON-NLS-1$
+                    dialog.open();
+                    for ( IEntry entry : dialog.getSelectedEntries() )
+                    {
+                        Dn entryDn = entry.getDn();
+                        if ( !dns.contains( entryDn ) )
+                        {
+                            dns.add( entryDn );
+                            dnListControl.add( entryDn.getName() );
+                        }
+                    }
+                    internalSetEnabled();
+                    notifyListeners();
+                }
+            }
+        } );
+
+        removeButton = BaseWidgetUtils.createButton( buttonsComposite,
+            Messages.getString( "EntryWidget.RemoveButton" ), 1 ); //$NON-NLS-1$
+        removeButton.addSelectionListener( new SelectionAdapter()
+        {
+            public void widgetSelected( SelectionEvent e )
+            {
+                int[] indices = dnListControl.getSelectionIndices();
+                // remove in reverse order so earlier indices stay valid
+                for ( int i = indices.length - 1; i >= 0; i-- )
+                {
+                    dns.remove( indices[i] );
+                    dnListControl.remove( indices[i] );
+                }
+                internalSetEnabled();
+                notifyListeners();
+            }
+        } );
+
+        internalSetEnabled();
+    }
+
+
+    /**
+     * Notifies that the Dn has been changed (single-select mode).
      */
     private void dnChanged()
     {
@@ -281,14 +421,25 @@ public class EntryWidget extends AbstractWidget
      */
     public void setEnabled( boolean enabled )
     {
-        dnCombo.setEnabled( enabled );
-
-        if ( enabled )
+        if ( multiSelect )
         {
-            this.dnChanged();
+            if ( dnListControl != null )
+            {
+                dnListControl.setEnabled( enabled );
+            }
+            internalSetEnabled();
         }
+        else
+        {
+            dnCombo.setEnabled( enabled );
 
-        internalSetEnabled();
+            if ( enabled )
+            {
+                this.dnChanged();
+            }
+
+            internalSetEnabled();
+        }
     }
 
 
@@ -297,18 +448,38 @@ public class EntryWidget extends AbstractWidget
      */
     private void internalSetEnabled()
     {
-        upButton.setEnabled( !Dn.isNullOrEmpty( dn ) && dnCombo.isEnabled() );
-        entryBrowseButton.setEnabled( browserConnection != null && dnCombo.isEnabled() );
+        if ( multiSelect )
+        {
+            if ( addButton != null )
+            {
+                addButton.setEnabled( browserConnection != null
+                    && ( dnListControl == null || dnListControl.isEnabled() ) );
+            }
+            if ( removeButton != null )
+            {
+                removeButton.setEnabled( dnListControl != null
+                    && dnListControl.isEnabled()
+                    && dnListControl.getSelectionCount() > 0 );
+            }
+        }
+        else
+        {
+            upButton.setEnabled( !Dn.isNullOrEmpty( dn ) && dnCombo.isEnabled() );
+            entryBrowseButton.setEnabled( browserConnection != null && dnCombo.isEnabled() );
+        }
     }
 
 
     /**
-     * Saves dialog settings.
+     * Saves dialog settings (single-select mode only).
      */
     public void saveDialogSettings()
     {
-        HistoryUtils.save( BrowserCommonActivator.getDefault().getDialogSettings(),
-            BrowserCommonConstants.DIALOGSETTING_KEY_DN_HISTORY, this.dnCombo.getText() );
+        if ( !multiSelect && dnCombo != null )
+        {
+            HistoryUtils.save( BrowserCommonActivator.getDefault().getDialogSettings(),
+                BrowserCommonConstants.DIALOGSETTING_KEY_DN_HISTORY, this.dnCombo.getText() );
+        }
     }
 
 
@@ -324,13 +495,32 @@ public class EntryWidget extends AbstractWidget
 
 
     /**
-     * Gets the Dn or <code>null</code> if the Dn isn't valid.
+     * Gets the Dn or <code>null</code> if the Dn isn't valid (single-select mode).
      *
      * @return the Dn or <code>null</code> if the Dn isn't valid
      */
     public Dn getDn()
     {
         return dn;
+    }
+
+
+    /**
+     * Gets all selected DNs (multi-select mode).
+     * In single-select mode returns an array with the single Dn, or an empty array.
+     *
+     * @return the array of selected DNs, never null
+     */
+    public Dn[] getDns()
+    {
+        if ( multiSelect )
+        {
+            return dns.toArray( new Dn[0] );
+        }
+        else
+        {
+            return dn != null ? new Dn[]{ dn } : new Dn[0];
+        }
     }
 
 
